@@ -70,7 +70,7 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
 
         # Filter the data (high pass filter)
         # noinspection PyTupleAssignmentBalance
-        b, a = signal.butter(N=5, Wn=5 / (record_data.fs/2), btype='highpass', output='ba')
+        b, a = signal.butter(N=5, Wn=10 / (record_data.fs/2), btype='highpass', output='ba')
         filtered_data = np.empty_like(raw_data)
         for idx in range(raw_data.shape[0]):
             filtered_data[idx, :] = signal.filtfilt(b, a, raw_data[idx, :])
@@ -80,7 +80,7 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
             np.savetxt(os.path.join(output_dir, "filtered_data_"+str(i)+".csv"), filtered_data, delimiter=',')
 
         # Perform PCA reduction
-        pca = PCA(n_components=15)
+        pca = PCA(n_components=14)
         pca.fit(filtered_data)
         reduced_filtered_data = pca.transform(filtered_data)
 
