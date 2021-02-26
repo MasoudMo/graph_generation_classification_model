@@ -14,7 +14,10 @@ from sklearn.decomposition import PCA
 @click.argument('output_dir', type=click.Path())
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
-def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
+@click.argument('ecg_samp_to', type=int, default=10000)
+@click.argument('pca_comps', type=int, default=14)
+@click.argument('cutoff_freq', type=int, default=10)
+def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq):
 
     logger = logging.getLogger(__name__)
     logger.info('Processing raw data...')
@@ -52,11 +55,14 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
     # Variable holding record labels
     labels = []
 
+    # Variable holding all filtered data (to be used for PCA)
+    all_filtered_data = np.empty((len(record_files)*15, ecg_samp_to))
+
     # Extract each record and save it to the CSV file
     for i, record in enumerate(record_files):
 
         # Extract record data
-        record_data = wfdb.io.rdrecord(record)
+        record_data = wfdb.io.rdrecord(record, sampto=ecg_samp_to)
 
         # Extract record label
         labels.append(diagnosis[record_data.comments[4]])
@@ -70,7 +76,7 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
 
         # Filter the data (high pass filter)
         # noinspection PyTupleAssignmentBalance
-        b, a = signal.butter(N=5, Wn=10 / (record_data.fs/2), btype='highpass', output='ba')
+        b, a = signal.butter(N=5, Wn=cutoff_freq / (record_data.fs/2), btype='highpass', output='ba')
         filtered_data = np.empty_like(raw_data)
         for idx in range(raw_data.shape[0]):
             filtered_data[idx, :] = signal.filtfilt(b, a, raw_data[idx, :])
@@ -79,18 +85,20 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data):
         if save_filtered_data:
             np.savetxt(os.path.join(output_dir, "filtered_data_"+str(i)+".csv"), filtered_data, delimiter=',')
 
-        # Perform PCA reduction
-        pca = PCA(n_components=14)
-        pca.fit(filtered_data)
-        reduced_filtered_data = pca.transform(filtered_data)
+        all_filtered_data[i*15: (i+1)*15, :] = filtered_data
 
-        # Save the reduced filtered data
-        np.savetxt(os.path.join(
-            output_dir,
-            "reduced_filtered_data_"+str(i)+".csv"),
-            reduced_filtered_data,
-            delimiter=','
-        )
+    # Perform PCA reduction
+    pca = PCA(n_components=pca_comps)
+    pca.fit(all_filtered_data)
+    reduced_filtered_data = pca.transform(all_filtered_data)
+
+    # Save the reduced filtered data
+    np.savetxt(os.path.join(
+        output_dir,
+        "reduced_filtered_data.csv"),
+        reduced_filtered_data,
+        delimiter=','
+    )
 
     # Save labels file
     np.savetxt(os.path.join(output_dir, "labels.csv"), np.array(labels, dtype=int), delimiter=',')
