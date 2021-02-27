@@ -1,8 +1,13 @@
 from dgl.nn.pytorch import SGConv
+from dgl.nn.pytorch import GraphConv
+from dgl.nn.pytorch import SAGEConv
 import dgl
 import torch.nn.functional as F
 import torch.nn as nn
-
+from torch.distributions import normal
+from torch import exp
+from torch import transpose
+from torch import matmul
 
 class BinaryGraphClassifier(nn.Module):
     """Torch NN module class performing graph classification
@@ -18,7 +23,7 @@ class BinaryGraphClassifier(nn.Module):
 
         Args:
             input_dim:
-                The dimension of the input data (e.g. number of PCA components)
+                The dimension of the input data
             hidden_dim:
                 The dimension of the hidden layer
         """
@@ -70,3 +75,72 @@ class BinaryGraphClassifier(nn.Module):
 
         return out
 
+
+class VariationalGraphAutoEncoder(nn.Module):
+    """Torch NN Module performing graph generation using VGAE
+
+    Performs graph generation using VGAE as described in: https://arxiv.org/abs/1611.07308
+
+    """
+
+    def __init__(self, input_dim, hidden_dim_1, hidden_dim_2, num_nodes):
+        """Initializes the model
+
+        Initializes the GNN layers using the input and hidden dimensions.
+
+        Args:
+            input_dim:
+                The dimension of the input data (e.g. number of PCA components)
+            hidden_dim_1:
+                The dimension of the first hidden layer
+            hidden_dim_2:
+                The dimension of the second hidden layer
+        """
+        super(VariationalGraphAutoEncoder, self).__init__()
+
+        # Define the graph convolutional layers
+        self.conv_shared = SAGEConv(in_feats=input_dim, out_feats=hidden_dim_1, aggregator_type='mean')
+        self.conv_mean = SAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2, aggregator_type='mean')
+        self.conv_log_std = SAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2, aggregator_type='mean')
+
+        # The output activation function
+        self.output_func = nn.Sigmoid()
+
+        # Other attributes
+        self.num_nodes = num_nodes
+        self.hidden_dim_2 = hidden_dim_2
+
+    def forward(self, g):
+        """Performs the graph generation's forward path
+
+        Performs the encoder and decoder for the graph generation process.
+
+        Args:
+            g:
+                The input graph to use for the generation process
+
+        Returns:
+            The reconstructed graph adjacency matrix
+        """
+
+        # Extract the graph's node features
+        h = g.ndata['x']
+
+        # Perform the GNN layer that is shared for both the mean and the std layers
+        h = F.relu(self.conv_shared(g, h))
+
+        # Perform the GNN layer to obtain embedding means
+        h_mean = self.conv_mean(g, h)
+
+        # Perform the GNN layer to obtain embeddings std
+        h_log_std = self.conv_log_std(g, h)
+
+        # Generate the posterior embeddings
+        distribution = normal.Normal(loc=h_mean, scale=exp(h_log_std))
+        z = distribution.sample()
+        z.requires_grad = True
+
+        # Reconstruct the graph
+        reconstruction = matmul(z, transpose(z, 0, 1))
+
+        return self.output_func(reconstruction)
