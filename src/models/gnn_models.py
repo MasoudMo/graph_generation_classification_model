@@ -1,13 +1,14 @@
-from dgl.nn.pytorch import SGConv
-from dgl.nn.pytorch import GraphConv
-from dgl.nn.pytorch import SAGEConv
+from dgl.nn.pytorch import DenseGraphConv
+from dgl.nn.pytorch import DenseSAGEConv
 import dgl
 import torch.nn.functional as F
 import torch.nn as nn
-from torch.distributions import normal
-from torch import exp
+from torch import randn_like
 from torch import transpose
 from torch import matmul
+from torch import exp
+from torch import mean
+
 
 class BinaryGraphClassifier(nn.Module):
     """Torch NN module class performing graph classification
@@ -30,8 +31,8 @@ class BinaryGraphClassifier(nn.Module):
         super(BinaryGraphClassifier, self).__init__()
 
         # Define the graph convolutional layers
-        self.conv_1 = SGConv(in_feats=input_dim, out_feats=hidden_dim, k=3)
-        self.conv_2 = SGConv(in_feats=hidden_dim, out_feats=hidden_dim, k=3)
+        self.conv_1 = DenseGraphConv(in_feats=input_dim, out_feats=hidden_dim)
+        self.conv_2 = DenseGraphConv(in_feats=hidden_dim, out_feats=hidden_dim)
 
         # Define the fully connected layers
         self.fc_1 = nn.Linear(hidden_dim, hidden_dim)
@@ -40,31 +41,27 @@ class BinaryGraphClassifier(nn.Module):
         # The output activation function
         self.output_func = nn.Sigmoid()
 
-    def forward(self, g):
+    def forward(self, adj, features):
         """Performs the classification's forward path
 
         Performs the forward path of the binary graph classification
 
         Args:
-            g:
-                The input graph to perform classification on
+            adj:
+                Input graph adjacency matrix
+            features:
+                The input node features
 
         Returns:
             The output of the sigmoid function indicating the classification for the input graph g
         """
 
-        # Extract the graph's node features
-        h = g.ndata['x']
-
         # Perform convolutional layers with Relu as the activation function
-        h = F.relu(self.conv_1(g, h))
-        h = F.relu(self.conv_2(g, h))
-
-        # Store the generated node embeddings
-        g.ndata['h'] = h
+        h = F.relu(self.conv_1(adj, features))
+        h = F.relu(self.conv_2(adj, h))
 
         # Find the mean of node embeddings to use as the graph embedding
-        hg = dgl.mean_nodes(g, 'h')
+        hg = mean(h, dim=0)
 
         # Perform the linear layers
         h = F.relu(self.fc_1(hg))
@@ -99,9 +96,9 @@ class VariationalGraphAutoEncoder(nn.Module):
         super(VariationalGraphAutoEncoder, self).__init__()
 
         # Define the graph convolutional layers
-        self.conv_shared = SAGEConv(in_feats=input_dim, out_feats=hidden_dim_1, aggregator_type='mean')
-        self.conv_mean = SAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2, aggregator_type='mean')
-        self.conv_log_std = SAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2, aggregator_type='mean')
+        self.conv_shared = DenseGraphConv(in_feats=input_dim, out_feats=hidden_dim_1)
+        self.conv_mean = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
+        self.conv_log_std = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -109,38 +106,39 @@ class VariationalGraphAutoEncoder(nn.Module):
         # Other attributes
         self.num_nodes = num_nodes
         self.hidden_dim_2 = hidden_dim_2
+        self.h_mean = None
+        self.h_log_std = None
 
-    def forward(self, g):
+        self.z = None
+
+    def forward(self, adj, features):
         """Performs the graph generation's forward path
 
         Performs the encoder and decoder for the graph generation process.
 
         Args:
-            g:
-                The input graph to use for the generation process
+            adj:
+                Input graph adjacency matrix
+            features:
+                The input node features
 
         Returns:
             The reconstructed graph adjacency matrix
         """
 
-        # Extract the graph's node features
-        h = g.ndata['x']
-
         # Perform the GNN layer that is shared for both the mean and the std layers
-        h = F.relu(self.conv_shared(g, h))
+        h = F.relu(self.conv_shared(adj, features))
 
         # Perform the GNN layer to obtain embedding means
-        h_mean = self.conv_mean(g, h)
+        self.h_mean = self.conv_mean(adj, h)
 
         # Perform the GNN layer to obtain embeddings std
-        h_log_std = self.conv_log_std(g, h)
+        self.h_log_std = self.conv_log_std(adj, h)
 
         # Generate the posterior embeddings
-        distribution = normal.Normal(loc=h_mean, scale=exp(h_log_std))
-        z = distribution.sample()
-        z.requires_grad = True
+        self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
 
         # Reconstruct the graph
-        reconstruction = matmul(z, transpose(z, 0, 1))
+        reconstruction = matmul(self.z, transpose(self.z, 0, 1))
 
         return self.output_func(reconstruction)

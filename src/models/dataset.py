@@ -37,10 +37,6 @@ class PtbEcgDataset(Dataset):
         self.use_knn_graph = use_knn_graph
         self.use_random_graph = use_random_graph
 
-        # Fully connected adjacency matrix
-        self.fc_adj = np.ones((15, 15))
-        self.fc_adj = dgl.from_scipy(coo_matrix(self.fc_adj))
-
     def __getitem__(self, item):
         """Return the 15 channels of ECG data
 
@@ -58,9 +54,10 @@ class PtbEcgDataset(Dataset):
         sample_data = self.data[item*15: (item+1)*15, :]
         sample_label = self.label[item]
 
-        self.fc_adj.nodes[:].data['x'] = torch.from_numpy(sample_data)
+        if sample_label != 0:
+            sample_label = np.array([1])
 
-        return self.fc_adj, sample_label
+        return torch.from_numpy(sample_data), torch.tensor(sample_label, dtype=torch.float)
 
     def __len__(self):
         """Returns the dataset size
