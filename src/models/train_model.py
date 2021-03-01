@@ -8,6 +8,7 @@ from gnn_models import *
 import torch
 import numpy as np
 from sklearn.metrics import roc_auc_score
+from torch.utils.data import random_split
 
 
 def generation_classification_loss(generated_graph,
@@ -39,19 +40,16 @@ def generation_classification_loss(generated_graph,
             The mean computed by the generator
     """
     # Compute the reconstruction loss
-    cost = binary_cross_entropy(generated_graph, original_graph, reduction='mean')
+    reconstruction_loss = binary_cross_entropy(generated_graph, original_graph)
 
     # Compute the KL loss
-    kl = (0.5/num_nodes) * torch.mean(sum(1 + 2*h_log_std - square(h_mean) - square(exp(h_log_std)), dim=1))
-
-    # Compute ELBO loss
-    cost -= kl
+    kl_loss = torch.mean(sum(1 + 2*h_log_std - square(h_mean) - square(exp(h_log_std)), dim=1))
 
     # Compute the classification loss
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
     # Add the classification loss
-    cost += 1000*classification_loss
+    cost = reconstruction_loss - kl_loss + classification_loss
 
     return cost
 
@@ -61,15 +59,20 @@ def generation_classification_loss(generated_graph,
 @click.argument('train_label_dir', type=click.Path(exists=True))
 def train(train_data_dir, train_label_dir):
 
+    torch.manual_seed(10)
+
     dataset = PtbEcgDataset(input_data_csv_file=train_data_dir, input_label_csv_file=train_label_dir)
 
-    print('Training dataset has {} samples'.format(len(dataset)/15))
+    train_dataset, val_dataset = random_split(dataset, [422, 100])
 
-    generator_model = VariationalGraphAutoEncoder(input_dim=14, hidden_dim_1=5, hidden_dim_2=3, num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=14, hidden_dim=4)
+    print('Training dataset has {} samples'.format(len(train_dataset)))
+    print('Validation dataset has {} samples'.format(len(val_dataset)))
 
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=0.01)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.01)
+    generator_model = VariationalGraphAutoEncoder(input_dim=14, hidden_dim_1=8, hidden_dim_2=4, num_nodes=15)
+    classifier_model = BinaryGraphClassifier(input_dim=14, hidden_dim=7)
+
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=0.001)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.001)
 
     for epoch in range(10000):
 
@@ -80,7 +83,7 @@ def train(train_data_dir, train_label_dir):
         y_pred = list()
         epoch_loss = 0
 
-        for features, label in dataset:
+        for features, label in train_dataset:
 
             generated_graph = generator_model(torch.ones((15, 15)), features)
 
@@ -108,7 +111,7 @@ def train(train_data_dir, train_label_dir):
 
             epoch_loss += loss.detach().item()
 
-        epoch_loss /= 522
+        epoch_loss /= len(train_dataset)
         y_true = np.array(y_true).flatten()
         y_pred = np.array(y_pred).flatten()
 
@@ -117,6 +120,41 @@ def train(train_data_dir, train_label_dir):
         # Compute the roc_auc accuracy
         acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
         print("Training epoch {}, accuracy {:.4f}".format(epoch, acc))
+
+        with torch.no_grad():
+            y_true = list()
+            y_pred = list()
+            epoch_loss = 0
+
+        for features, label in val_dataset:
+
+            generated_graph = generator_model(adj=torch.ones((15, 15)), features=features)
+
+            classification_predictions = classifier_model(generated_graph, features)
+
+            y_true.append(label.numpy().flatten())
+            y_pred.append(classification_predictions.detach().numpy().flatten())
+
+            # ELBO Loss
+            loss = generation_classification_loss(generated_graph=generated_graph,
+                                                  original_graph=torch.ones((15, 15)),
+                                                  classification_predictions=classification_predictions,
+                                                  classification_labels=label,
+                                                  num_nodes=generator_model.num_nodes,
+                                                  h_log_std=generator_model.h_log_std,
+                                                  h_mean=generator_model.h_mean)
+
+            epoch_loss += loss.detach().item()
+
+        epoch_loss /= len(val_dataset)
+        y_true = np.array(y_true).flatten()
+        y_pred = np.array(y_pred).flatten()
+
+        print('Validation epoch {}, loss {:.4f}'.format(epoch, epoch_loss))
+
+        # Compute the roc_auc accuracy
+        acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
+        print("Validation epoch {}, accuracy {:.4f}".format(epoch, acc))
 
 
 if __name__ == "__main__":

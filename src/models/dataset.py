@@ -67,4 +67,4 @@ class PtbEcgDataset(Dataset):
 
         """
 
-        return self.data.shape[0]
+        return int((self.data.shape[0]+1)/15)
