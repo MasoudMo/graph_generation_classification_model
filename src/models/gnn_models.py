@@ -68,7 +68,7 @@ class BinaryGraphClassifier(nn.Module):
 
         # Perform the linear layers
         h = F.relu(self.fc_1(hg))
-        out = F.relu(self.fc_2(h))
+        out = self.fc_2(h)
 
         # Perform the output activation function
         out = self.output_func(out)

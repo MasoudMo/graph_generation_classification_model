@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 from torch.utils.data import random_split
 from visdom import Visdom
+import torch
 
 
 def generation_classification_loss(generated_graph,
@@ -58,7 +59,8 @@ def generation_classification_loss(generated_graph,
 @click.command()
 @click.argument('train_data_dir', type=click.Path(exists=True))
 @click.argument('train_label_dir', type=click.Path(exists=True))
-def train(train_data_dir, train_label_dir):
+@click.argument('history_path', type=str)
+def train(train_data_dir, train_label_dir, history_path):
 
     torch.manual_seed(10)
 
@@ -69,11 +71,14 @@ def train(train_data_dir, train_label_dir):
     print('Training dataset has {} samples'.format(len(train_dataset)))
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
-    generator_model = VariationalGraphAutoEncoder(input_dim=14, hidden_dim_1=8, hidden_dim_2=4, num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=14, hidden_dim=7)
+    generator_model = VariationalGraphAutoEncoder(input_dim=6, hidden_dim_1=4, hidden_dim_2=2, num_nodes=15)
+    classifier_model = BinaryGraphClassifier(input_dim=6, hidden_dim=4)
 
     graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=0.001)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.0001)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.001)
+
+    # Scheduler
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[20, 100, 200], gamma=0.5)
 
     vis = Visdom()
 
@@ -132,6 +137,15 @@ def train(train_data_dir, train_label_dir):
                  update='append', win='train_acc',
                  opts=dict(title="Train Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
 
+        if history_path:
+            f = open(history_path+"_train_losses.txt", "a")
+            f.write(str(epoch_loss) + "\n")
+            f.close()
+
+            f = open(history_path + "_train_accs.txt", "a")
+            f.write(str(acc) + "\n")
+            f.close()
+
         with torch.no_grad():
             y_true = list()
             y_pred = list()
@@ -174,6 +188,17 @@ def train(train_data_dir, train_label_dir):
         vis.line(Y=torch.reshape(torch.tensor(acc), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
                  update='append', win='val_acc',
                  opts=dict(title="Validation Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+
+        if history_path:
+            f = open(history_path+"_val_losses.txt", "a")
+            f.write(str(epoch_loss) + "\n")
+            f.close()
+
+            f = open(history_path + "_val_accs.txt", "a")
+            f.write(str(acc) + "\n")
+            f.close()
+
+        scheduler.step()
 
 
 if __name__ == "__main__":

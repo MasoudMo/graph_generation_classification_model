@@ -15,7 +15,7 @@ from sklearn.decomposition import PCA
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
 @click.argument('ecg_samp_to', type=int, default=10000)
-@click.argument('pca_comps', type=int, default=14)
+@click.argument('pca_comps', type=int, default=6)
 @click.argument('cutoff_freq', type=int, default=10)
 def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq):
 
