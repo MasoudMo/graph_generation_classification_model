@@ -8,6 +8,7 @@ from torch import transpose
 from torch import matmul
 from torch import exp
 from torch import mean
+import torch
 
 
 class BinaryGraphClassifier(nn.Module):
@@ -55,6 +56,8 @@ class BinaryGraphClassifier(nn.Module):
         Returns:
             The output of the sigmoid function indicating the classification for the input graph g
         """
+
+        adj = torch.where(adj > 0.5, 1, 0)
 
         # Perform convolutional layers with Relu as the activation function
         h = F.relu(self.conv_1(adj, features))

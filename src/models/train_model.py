@@ -9,6 +9,7 @@ import torch
 import numpy as np
 from sklearn.metrics import roc_auc_score
 from torch.utils.data import random_split
+from visdom import Visdom
 
 
 def generation_classification_loss(generated_graph,
@@ -49,7 +50,7 @@ def generation_classification_loss(generated_graph,
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
     # Add the classification loss
-    cost = reconstruction_loss - kl_loss + classification_loss
+    cost = reconstruction_loss - kl_loss + 10*classification_loss
 
     return cost
 
@@ -72,7 +73,9 @@ def train(train_data_dir, train_label_dir):
     classifier_model = BinaryGraphClassifier(input_dim=14, hidden_dim=7)
 
     graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=0.001)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.001)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.0001)
+
+    vis = Visdom()
 
     for epoch in range(10000):
 
@@ -87,7 +90,7 @@ def train(train_data_dir, train_label_dir):
 
             generated_graph = generator_model(torch.ones((15, 15)), features)
 
-            classification_predictions = classifier_model(generated_graph, features)
+            classification_predictions = classifier_model(generated_graph.detach(), features)
 
             y_true.append(label.numpy().flatten())
             y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -121,6 +124,14 @@ def train(train_data_dir, train_label_dir):
         acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
         print("Training epoch {}, accuracy {:.4f}".format(epoch, acc))
 
+        vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='tain_loss',
+                 opts=dict(title="Train Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+        vis.line(Y=torch.reshape(torch.tensor(acc), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='train_acc',
+                 opts=dict(title="Train Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+
         with torch.no_grad():
             y_true = list()
             y_pred = list()
@@ -130,7 +141,7 @@ def train(train_data_dir, train_label_dir):
 
             generated_graph = generator_model(adj=torch.ones((15, 15)), features=features)
 
-            classification_predictions = classifier_model(generated_graph, features)
+            classification_predictions = classifier_model(generated_graph.detach(), features)
 
             y_true.append(label.numpy().flatten())
             y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -155,6 +166,14 @@ def train(train_data_dir, train_label_dir):
         # Compute the roc_auc accuracy
         acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
         print("Validation epoch {}, accuracy {:.4f}".format(epoch, acc))
+
+        vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
+                 update='append', win='val_loss',
+                 opts=dict(title="Validation Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+        vis.line(Y=torch.reshape(torch.tensor(acc), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
+                 update='append', win='val_acc',
+                 opts=dict(title="Validation Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
 
 
 if __name__ == "__main__":
