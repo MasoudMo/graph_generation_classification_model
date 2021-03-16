@@ -5,7 +5,6 @@ from torch import square
 from torch import sum
 import torch.optim as optim
 from gnn_models import *
-import torch
 import numpy as np
 from sklearn.metrics import roc_auc_score
 from torch.utils.data import random_split
@@ -17,7 +16,6 @@ def generation_classification_loss(generated_graph,
                                    original_graph,
                                    classification_predictions,
                                    classification_labels,
-                                   num_nodes,
                                    h_log_std,
                                    h_mean):
     """Computes the overall loss
@@ -34,8 +32,6 @@ def generation_classification_loss(generated_graph,
             The classifier's prediction
         classification_labels:
             The labels for the classifier
-        num_nodes:
-            The number of nodes in the graph
         h_log_std:
             The log std computed by the generator
         h_mean:
@@ -51,7 +47,7 @@ def generation_classification_loss(generated_graph,
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
     # Add the classification loss
-    cost = reconstruction_loss - kl_loss + 10*classification_loss
+    cost = reconstruction_loss - kl_loss + 100*classification_loss
 
     return cost
 
@@ -64,26 +60,33 @@ def train(train_data_dir, train_label_dir, history_path):
 
     torch.manual_seed(10)
 
+    # Load the dataset
     dataset = PtbEcgDataset(input_data_csv_file=train_data_dir, input_label_csv_file=train_label_dir)
 
+    # Make validation and training split
     train_dataset, val_dataset = random_split(dataset, [422, 100])
 
     print('Training dataset has {} samples'.format(len(train_dataset)))
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
+    # Define classification and generation models
     generator_model = VariationalGraphAutoEncoder(input_dim=6, hidden_dim_1=4, hidden_dim_2=2, num_nodes=15)
     classifier_model = BinaryGraphClassifier(input_dim=6, hidden_dim=4)
 
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=0.001)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=0.001)
+    # Optimizers for the classification and generator process
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-4)
 
     # Scheduler
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[20, 100, 200], gamma=0.5)
+    # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[20, 50, 10], gamma=0.3)
+    # scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 200, 300], gamma=0.5)
 
+    # Initialize visualizer
     vis = Visdom()
 
     for epoch in range(10000):
 
+        # Put models in training mode
         generator_model.train()
         classifier_model.train()
 
@@ -105,7 +108,6 @@ def train(train_data_dir, train_label_dir, history_path):
                                                   original_graph=torch.ones((15, 15)),
                                                   classification_predictions=classification_predictions,
                                                   classification_labels=label,
-                                                  num_nodes=generator_model.num_nodes,
                                                   h_log_std=generator_model.h_log_std,
                                                   h_mean=generator_model.h_mean)
 
@@ -165,7 +167,6 @@ def train(train_data_dir, train_label_dir, history_path):
                                                   original_graph=torch.ones((15, 15)),
                                                   classification_predictions=classification_predictions,
                                                   classification_labels=label,
-                                                  num_nodes=generator_model.num_nodes,
                                                   h_log_std=generator_model.h_log_std,
                                                   h_mean=generator_model.h_mean)
 
@@ -198,7 +199,9 @@ def train(train_data_dir, train_label_dir, history_path):
             f.write(str(acc) + "\n")
             f.close()
 
-        scheduler.step()
+        # Change LR
+        # scheduler_gen.step()
+        # scheduler_cl.step()
 
 
 if __name__ == "__main__":
