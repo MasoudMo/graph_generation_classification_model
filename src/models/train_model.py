@@ -7,7 +7,9 @@ import torch.optim as optim
 from gnn_models import *
 import numpy as np
 from sklearn.metrics import roc_auc_score
-from torch.utils.data import random_split
+from sklearn.model_selection import train_test_split
+from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data import DataLoader
 from visdom import Visdom
 import torch
 
@@ -63,8 +65,15 @@ def train(train_data_dir, train_label_dir, history_path):
     # Load the dataset
     dataset = PtbEcgDataset(input_data_csv_file=train_data_dir, input_label_csv_file=train_label_dir)
 
-    # Make validation and training split
-    train_dataset, val_dataset = random_split(dataset, [422, 100])
+    # Make validation and training split in a stratified fashion
+    train_idx, val_idx = train_test_split(np.arange(len(dataset)),
+                                          test_size=0.2,
+                                          random_state=40,
+                                          stratify=dataset.label,
+                                          shuffle=True)
+
+    train_dataset = DataLoader(dataset, sampler=SubsetRandomSampler(train_idx))
+    val_dataset = DataLoader(dataset, sampler=SubsetRandomSampler(val_idx))
 
     print('Training dataset has {} samples'.format(len(train_dataset)))
     print('Validation dataset has {} samples'.format(len(val_dataset)))
@@ -84,6 +93,9 @@ def train(train_data_dir, train_label_dir, history_path):
     # Initialize visualizer
     vis = Visdom()
 
+    # Holds the maximum validation accuracy
+    max_validation_acc = 0
+
     for epoch in range(10000):
 
         # Put models in training mode
@@ -96,9 +108,9 @@ def train(train_data_dir, train_label_dir, history_path):
 
         for features, label in train_dataset:
 
-            generated_graph = generator_model(torch.ones((15, 15)), features)
+            generated_graph = generator_model(torch.ones((15, 15)), features[0])
 
-            classification_predictions = classifier_model(generated_graph.detach(), features)
+            classification_predictions = classifier_model(generated_graph.detach(), features[0])
 
             y_true.append(label.numpy().flatten())
             y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -107,7 +119,7 @@ def train(train_data_dir, train_label_dir, history_path):
             loss = generation_classification_loss(generated_graph=generated_graph,
                                                   original_graph=torch.ones((15, 15)),
                                                   classification_predictions=classification_predictions,
-                                                  classification_labels=label,
+                                                  classification_labels=label[0],
                                                   h_log_std=generator_model.h_log_std,
                                                   h_mean=generator_model.h_mean)
 
@@ -153,11 +165,14 @@ def train(train_data_dir, train_label_dir, history_path):
             y_pred = list()
             epoch_loss = 0
 
+        generator_model.eval()
+        classifier_model.eval()
+
         for features, label in val_dataset:
 
-            generated_graph = generator_model(adj=torch.ones((15, 15)), features=features)
+            generated_graph = generator_model(adj=torch.ones((15, 15)), features=features[0])
 
-            classification_predictions = classifier_model(generated_graph.detach(), features)
+            classification_predictions = classifier_model(generated_graph.detach(), features[0])
 
             y_true.append(label.numpy().flatten())
             y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -166,7 +181,7 @@ def train(train_data_dir, train_label_dir, history_path):
             loss = generation_classification_loss(generated_graph=generated_graph,
                                                   original_graph=torch.ones((15, 15)),
                                                   classification_predictions=classification_predictions,
-                                                  classification_labels=label,
+                                                  classification_labels=label[0],
                                                   h_log_std=generator_model.h_log_std,
                                                   h_mean=generator_model.h_mean)
 
@@ -181,6 +196,13 @@ def train(train_data_dir, train_label_dir, history_path):
         # Compute the roc_auc accuracy
         acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
         print("Validation epoch {}, accuracy {:.4f}".format(epoch, acc))
+
+        # Save the model only if validation accuracy has increased
+        if acc > max_validation_acc:
+            print("Accuracy increased. Saving model...")
+            torch.save(classifier_model.state_dict(), '../../models/classifier_model.pt')
+            torch.save(generator_model.state_dict(), '../../models/generator_model.pt')
+            max_validation_acc = acc
 
         vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
                  update='append', win='val_loss',

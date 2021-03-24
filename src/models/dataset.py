@@ -26,12 +26,19 @@ class PtbEcgDataset(Dataset):
         """
 
         # Read the data csv
-        pd_df = pd.read_csv(input_data_csv_file)
+        pd_df = pd.read_csv(input_data_csv_file, header=None)
         self.data = pd_df.to_numpy(dtype=np.float32)
 
         # Read the label csv
-        pd_df = pd.read_csv(input_label_csv_file)
+        pd_df = pd.read_csv(input_label_csv_file, header=None)
         self.label = pd_df.to_numpy(dtype=np.int8)
+
+        self.num_healthy_samps = np.count_nonzero(self.label == 0)
+        self.num_unhealthy_samps = np.count_nonzero(self.label != 0)
+
+        for idx, lab in enumerate(self.label):
+            if lab != 0:
+                self.label[idx] = 1
 
         # Set other attributes
         self.use_knn_graph = use_knn_graph
@@ -54,9 +61,6 @@ class PtbEcgDataset(Dataset):
         sample_data = self.data[item*15: (item+1)*15, :]
         sample_label = self.label[item]
 
-        if sample_label != 0:
-            sample_label = np.array([1])
-
         return torch.from_numpy(sample_data), torch.tensor(sample_label, dtype=torch.float)
 
     def __len__(self):
@@ -67,4 +71,4 @@ class PtbEcgDataset(Dataset):
 
         """
 
-        return int((self.data.shape[0]+1)/15)
+        return int((self.data.shape[0])/15)
