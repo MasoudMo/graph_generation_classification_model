@@ -40,8 +40,8 @@ class BinaryGraphClassifier(nn.Module):
         self.fc_2 = nn.Linear(hidden_dim, 1)
 
         # Drop out layers
-        self.conv_dropout_1 = nn.Dropout(p=0.4)
-        self.fc_dropout = nn.Dropout(p=0.4)
+        self.conv_dropout_1 = nn.Dropout(p=0.6)
+        self.fc_dropout = nn.Dropout(p=0.7)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -113,7 +113,7 @@ class VariationalGraphAutoEncoder(nn.Module):
         self.output_func = nn.Sigmoid()
 
         # Dropout layer
-        self.conv_dropout_1 = nn.Dropout(p=0.4)
+        self.conv_dropout_1 = nn.Dropout(p=0.6)
 
         # Other attributes
         self.num_nodes = num_nodes
