@@ -14,10 +14,11 @@ from sklearn.decomposition import PCA
 @click.argument('output_dir', type=click.Path())
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
-@click.argument('ecg_samp_to', type=int, default=10000)
-@click.argument('pca_comps', type=int, default=10)
+@click.argument('ecg_samp_to', type=int, default=5000)
+@click.argument('pca_comps', type=int, default=8)
 @click.argument('cutoff_freq', type=int, default=10)
-def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq):
+@click.argument('ctrl_repeats', type=int, default=4)
+def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq, ctrl_repeats):
 
     logger = logging.getLogger(__name__)
     logger.info('Processing raw data...')
@@ -50,21 +51,26 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to
         'Reason for admission: Palpitation': 14}
 
     # Extract the number of samples in the dataset
-    logger.info('Number of data samples: {}'.format(len(record_files)))
+    logger.info('Number of original data samples: {}'.format(len(record_files)))
 
     # Variable holding record labels
     labels = []
 
+    # Compute number of records after processing (including augmentation)
+    num_processed_records = 80*ctrl_repeats+442
+    logger.info('Number of processed data samples: {}'.format(num_processed_records))
+
     # Variable holding all filtered data (to be used for PCA)
-    all_filtered_data = np.empty((len(record_files)*15, ecg_samp_to))
+    all_filtered_data = np.empty((num_processed_records*15, ecg_samp_to))
 
     # Extract each record and save it to the CSV file
+    curr_idx = 0
     for i, record in enumerate(record_files):
 
         # Extract record data
         record_data = wfdb.io.rdrecord(record, sampto=ecg_samp_to)
 
-        # Extract record label
+        # Extract the label
         labels.append(diagnosis[record_data.comments[4]])
 
         # Read the raw channel data
@@ -72,7 +78,7 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to
 
         # Save the raw data
         if save_raw_data:
-            np.savetxt(os.path.join(output_dir, "raw_data_"+str(i)+".csv"), raw_data, delimiter=',')
+            np.savetxt(os.path.join(output_dir, "raw_data_"+str(curr_idx)+".csv"), raw_data, delimiter=',')
 
         # Filter the data (high pass filter)
         # noinspection PyTupleAssignmentBalance
@@ -83,9 +89,40 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to
 
         # Save the filtered data
         if save_filtered_data:
-            np.savetxt(os.path.join(output_dir, "filtered_data_"+str(i)+".csv"), filtered_data, delimiter=',')
+            np.savetxt(os.path.join(output_dir, "filtered_data_"+str(curr_idx)+".csv"), filtered_data, delimiter=',')
 
-        all_filtered_data[i*15: (i+1)*15, :] = filtered_data
+        all_filtered_data[curr_idx*15: (curr_idx+1)*15, :] = filtered_data
+        curr_idx += 1
+
+        if labels[-1] is 0:
+            for j in range(1, ctrl_repeats):
+
+                # Extract record data
+                record_data = wfdb.io.rdrecord(record, sampfrom=j*ecg_samp_to, sampto=(j+1)*ecg_samp_to)
+
+                # Extract the label
+                labels.append(0)
+
+                # Read the raw channel data
+                raw_data = np.transpose(record_data.p_signal)
+
+                # Save the raw data
+                if save_raw_data:
+                    np.savetxt(os.path.join(output_dir, "raw_data_"+str(curr_idx)+".csv"), raw_data, delimiter=',')
+
+                # Filter the data (high pass filter)
+                # noinspection PyTupleAssignmentBalance
+                b, a = signal.butter(N=5, Wn=cutoff_freq / (record_data.fs/2), btype='highpass', output='ba')
+                filtered_data = np.empty_like(raw_data)
+                for idx in range(raw_data.shape[0]):
+                    filtered_data[idx, :] = signal.filtfilt(b, a, raw_data[idx, :])
+
+                # Save the filtered data
+                if save_filtered_data:
+                    np.savetxt(os.path.join(output_dir, "filtered_data_"+str(curr_idx)+".csv"), filtered_data, delimiter=',')
+
+                all_filtered_data[curr_idx*15: (curr_idx+1)*15, :] = filtered_data
+                curr_idx += 1
 
     # Perform PCA reduction
     pca = PCA(n_components=pca_comps)

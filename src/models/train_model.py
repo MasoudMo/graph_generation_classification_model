@@ -60,7 +60,7 @@ def generation_classification_loss(generated_graph,
 @click.command()
 @click.argument('train_data_dir', type=click.Path(exists=True))
 @click.argument('train_label_dir', type=click.Path(exists=True))
-@click.argument('history_path', type=str)
+@click.option('--history_path', '-hp', default=None)
 def train(train_data_dir, train_label_dir, history_path):
 
     torch.manual_seed(10)
@@ -85,16 +85,18 @@ def train(train_data_dir, train_label_dir, history_path):
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
     # Define classification and generation models
-    generator_model = VariationalGraphAutoEncoder(input_dim=10, hidden_dim_1=6, hidden_dim_2=4, num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim=6)
+    generator_model = VariationalGraphAutoEncoder(input_dim=8, hidden_dim_1=4, hidden_dim_2=2, num_nodes=15)
+    classifier_model = BinaryGraphClassifier(input_dim=8, hidden_dim=4)
 
     # Optimizers for the classification and generator process
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
+    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
     # Scheduler
-    scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 200, 300], gamma=0.7)
-    scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 200, 300], gamma=0.7)
+    # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
+    # scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
 
     # Initialize visualizer
     vis = Visdom()
@@ -252,8 +254,8 @@ def train(train_data_dir, train_label_dir, history_path):
                     plt.close()
 
         # Change LR
-        scheduler_gen.step()
-        scheduler_cl.step()
+        # scheduler_gen.step()
+        # scheduler_cl.step()
 
 
 if __name__ == "__main__":
