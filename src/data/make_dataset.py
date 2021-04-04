@@ -15,9 +15,9 @@ from sklearn.decomposition import PCA
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
 @click.argument('ecg_samp_to', type=int, default=5000)
-@click.argument('pca_comps', type=int, default=8)
-@click.argument('cutoff_freq', type=int, default=10)
-@click.argument('ctrl_repeats', type=int, default=4)
+@click.argument('pca_comps', type=int, default=15)
+@click.argument('cutoff_freq', type=int, default=5)
+@click.argument('ctrl_repeats', type=int, default=5)
 def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq, ctrl_repeats):
 
     logger = logging.getLogger(__name__)

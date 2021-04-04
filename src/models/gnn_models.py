@@ -40,8 +40,8 @@ class BinaryGraphClassifier(nn.Module):
         self.fc_2 = nn.Linear(hidden_dim, 1)
 
         # Drop out layers
-        self.conv_dropout_1 = nn.Dropout(p=0)
-        self.fc_dropout = nn.Dropout(p=0.2)
+        self.conv_dropout_1 = nn.Dropout(p=0.5)
+        self.fc_dropout = nn.Dropout(p=0.5)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -61,14 +61,14 @@ class BinaryGraphClassifier(nn.Module):
             The output of the sigmoid function indicating the classification for the input graph g
         """
 
-        adj = torch.where(adj > 0.5, 1, 0)
+        # adj = torch.where(adj > 0.5, 1, 0)
 
         # Perform convolutional layers with Relu as the activation function
         h = F.relu(self.conv_1(adj, features))
         h = self.conv_dropout_1(h)
         h = F.relu(self.conv_2(adj, h))
 
-        # Find the mean of node embeddings to use as the graph embedding
+        # Find the sum of node embeddings to use as the graph embedding
         hg = mean(h, dim=0)
 
         # Perform the linear layers
@@ -112,9 +112,6 @@ class VariationalGraphAutoEncoder(nn.Module):
         # The output activation function
         self.output_func = nn.Sigmoid()
 
-        # Dropout layer
-        self.conv_dropout_1 = nn.Dropout(p=0.2)
-
         # Other attributes
         self.num_nodes = num_nodes
         self.hidden_dim_2 = hidden_dim_2
@@ -140,8 +137,6 @@ class VariationalGraphAutoEncoder(nn.Module):
 
         # Perform the GNN layer that is shared for both the mean and the std layers
         h = F.relu(self.conv_shared(adj, features))
-
-        h = self.conv_dropout_1(h)
 
         # Perform the GNN layer to obtain embedding means
         self.h_mean = self.conv_mean(adj, h)

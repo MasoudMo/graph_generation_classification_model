@@ -52,14 +52,15 @@ def generation_classification_loss(generated_graph,
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
     # Add the classification loss
-    cost = reconstruction_loss - kl_loss + 5*classification_loss
+    cost = 5*reconstruction_loss - kl_loss + 20*classification_loss
 
-    return cost
+    return cost, reconstruction_loss, -kl_loss, classification_loss
 
 
 @click.command()
 @click.argument('train_data_dir', type=click.Path(exists=True))
 @click.argument('train_label_dir', type=click.Path(exists=True))
+# @click.option('--history_path', '-hp', default='../../reports/training_history/tr')
 @click.option('--history_path', '-hp', default=None)
 def train(train_data_dir, train_label_dir, history_path):
 
@@ -85,12 +86,12 @@ def train(train_data_dir, train_label_dir, history_path):
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
     # Define classification and generation models
-    generator_model = VariationalGraphAutoEncoder(input_dim=8, hidden_dim_1=4, hidden_dim_2=2, num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=8, hidden_dim=4)
+    generator_model = VariationalGraphAutoEncoder(input_dim=15, hidden_dim_1=6, hidden_dim_2=4, num_nodes=15)
+    classifier_model = BinaryGraphClassifier(input_dim=15, hidden_dim=3)
 
     # Optimizers for the classification and generator process
     graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=5e-3)
     # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
     # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
@@ -116,6 +117,10 @@ def train(train_data_dir, train_label_dir, history_path):
         y_true = list()
         y_pred = list()
         epoch_loss = 0
+        epoch_recl = 0
+        epoch_kl = 0
+        epoch_cl = 0
+        num_edges = 0
 
         for features, label in train_dataset:
 
@@ -127,12 +132,12 @@ def train(train_data_dir, train_label_dir, history_path):
             y_pred.append(classification_predictions.detach().numpy().flatten())
 
             # ELBO Loss
-            loss = generation_classification_loss(generated_graph=generated_graph,
-                                                  original_graph=torch.ones((15, 15)),
-                                                  classification_predictions=classification_predictions,
-                                                  classification_labels=label[0],
-                                                  h_log_std=generator_model.h_log_std,
-                                                  h_mean=generator_model.h_mean)
+            loss, recl, kl, cl = generation_classification_loss(generated_graph=generated_graph,
+                                                                original_graph=torch.ones((15, 15)),
+                                                                classification_predictions=classification_predictions,
+                                                                classification_labels=label[0],
+                                                                h_log_std=generator_model.h_log_std,
+                                                                h_mean=generator_model.h_mean)
 
             graph_generator_optimizer.zero_grad()
             graph_classifier_optimizer.zero_grad()
@@ -143,8 +148,19 @@ def train(train_data_dir, train_label_dir, history_path):
             graph_classifier_optimizer.step()
 
             epoch_loss += loss.detach().item()
+            epoch_recl += recl.detach().item()
+            epoch_kl += kl.detach().item()
+            epoch_cl += cl.detach().item()
+
+            # Count the number of edges
+            adj = torch.where(generated_graph.detach() > 0.5, 1, 0)
+            num_edges += (torch.count_nonzero(adj).detach().item()-15)/2
 
         epoch_loss /= len(train_dataset)
+        epoch_recl /= len(train_dataset)
+        epoch_kl /= len(train_dataset)
+        epoch_cl /= len(train_dataset)
+        num_edges /= len(train_dataset)
         y_true = np.array(y_true).flatten()
         y_pred = np.array(y_pred).flatten()
 
@@ -154,13 +170,32 @@ def train(train_data_dir, train_label_dir, history_path):
         acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
         print("Training epoch {}, accuracy {:.4f}".format(epoch, acc))
 
+        # Print average number of edges
+        print("Training epoch {}, num edges {:.4f}".format(epoch, num_edges))
+
         vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='tain_loss',
-                 opts=dict(title="Train Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+                 update='append', win='train_loss', name='train_trace',
+                 opts=dict(title="Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
         vis.line(Y=torch.reshape(torch.tensor(acc), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_acc',
-                 opts=dict(title="Train Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+                 update='append', win='train_acc', name='train_trace',
+                 opts=dict(title="Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+
+        vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='train_recl', name='train_trace',
+                 opts=dict(title="Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+        vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='train_kl', name='train_trace',
+                 opts=dict(title="KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+        vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='train_cl', name='train_trace',
+                 opts=dict(title="Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+        vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                 update='append', win='train_num_edge', name='train_trace',
+                 opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
 
         if history_path:
             f = open(history_path+"_train_losses.txt", "a")
@@ -183,6 +218,10 @@ def train(train_data_dir, train_label_dir, history_path):
             y_true = list()
             y_pred = list()
             epoch_loss = 0
+            epoch_recl = 0
+            epoch_kl = 0
+            epoch_cl = 0
+            num_edges = 0
 
             generator_model.eval()
             classifier_model.eval()
@@ -197,16 +236,27 @@ def train(train_data_dir, train_label_dir, history_path):
                 y_pred.append(classification_predictions.detach().numpy().flatten())
 
                 # ELBO Loss
-                loss = generation_classification_loss(generated_graph=generated_graph,
-                                                      original_graph=torch.ones((15, 15)),
-                                                      classification_predictions=classification_predictions,
-                                                      classification_labels=label[0],
-                                                      h_log_std=generator_model.h_log_std,
-                                                      h_mean=generator_model.h_mean)
+                loss, recl, kl, cl = generation_classification_loss(generated_graph=generated_graph,
+                                                                    original_graph=torch.ones((15, 15)),
+                                                                    classification_predictions=classification_predictions,
+                                                                    classification_labels=label[0],
+                                                                    h_log_std=generator_model.h_log_std,
+                                                                    h_mean=generator_model.h_mean)
 
                 epoch_loss += loss.detach().item()
+                epoch_recl += recl.detach().item()
+                epoch_kl += kl.detach().item()
+                epoch_cl += cl.detach().item()
+
+                # Count the number of edges
+                adj = torch.where(generated_graph.detach() > 0.5, 1, 0)
+                num_edges += (torch.count_nonzero(adj).detach().item()-15)/2
 
             epoch_loss /= len(val_dataset)
+            epoch_recl /= len(val_dataset)
+            epoch_kl /= len(val_dataset)
+            epoch_cl /= len(val_dataset)
+            num_edges /= len(val_dataset)
             y_true = np.array(y_true).flatten()
             y_pred = np.array(y_pred).flatten()
 
@@ -215,6 +265,9 @@ def train(train_data_dir, train_label_dir, history_path):
             # Compute the roc_auc accuracy
             acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
             print("Validation epoch {}, accuracy {:.4f}".format(epoch, acc))
+
+            # Print average number of edges
+            print("Validation epoch {}, num edges {:.4f}".format(epoch, num_edges))
 
             # Save the model only if validation accuracy has increased
             if acc > max_validation_acc:
@@ -229,12 +282,28 @@ def train(train_data_dir, train_label_dir, history_path):
                 np.savetxt("../../models/confusion_matrix.csv", conf_mat, delimiter=",")
 
             vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
-                     update='append', win='val_loss',
+                     update='append', win='train_loss', name='val_trace',
                      opts=dict(title="Validation Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
             vis.line(Y=torch.reshape(torch.tensor(acc), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
-                     update='append', win='val_acc',
+                     update='append', win='train_acc', name='val_trace',
                      opts=dict(title="Validation Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+
+            vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_recl', name='val_trace',
+                     opts=dict(title="Validation Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+            vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_kl', name='val_trace',
+                     opts=dict(title="Validation KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+            vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_cl', name='val_trace',
+                     opts=dict(title="Validation Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+
+            vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_num_edge', name='val_trace',
+                     opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
 
             if history_path:
                 f = open(history_path+"_val_losses.txt", "a")
