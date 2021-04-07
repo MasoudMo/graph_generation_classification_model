@@ -7,6 +7,7 @@ import wfdb
 import numpy as np
 from scipy import signal
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 
 
 @click.command()
@@ -14,11 +15,21 @@ from sklearn.decomposition import PCA
 @click.argument('output_dir', type=click.Path())
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
-@click.argument('ecg_samp_to', type=int, default=5000)
-@click.argument('pca_comps', type=int, default=15)
-@click.argument('cutoff_freq', type=int, default=5)
-@click.argument('ctrl_repeats', type=int, default=5)
-def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to, pca_comps, cutoff_freq, ctrl_repeats):
+@click.argument('ecg_samp_to', type=int, default=20000)
+@click.argument('num_comps', type=int, default=15)
+@click.argument('cutoff_freq', type=int, default=10)
+@click.argument('ctrl_repeats', type=int, default=4)
+@click.argument('reduction_type', type=str, default='tsne')
+
+def main(dataset_dir,
+         output_dir,
+         save_raw_data,
+         save_filtered_data,
+         ecg_samp_to,
+         num_comps,
+         cutoff_freq,
+         ctrl_repeats,
+         reduction_type):
 
     logger = logging.getLogger(__name__)
     logger.info('Processing raw data...')
@@ -124,10 +135,13 @@ def main(dataset_dir, output_dir, save_raw_data, save_filtered_data, ecg_samp_to
                 all_filtered_data[curr_idx*15: (curr_idx+1)*15, :] = filtered_data
                 curr_idx += 1
 
-    # Perform PCA reduction
-    pca = PCA(n_components=pca_comps)
-    pca.fit(all_filtered_data)
-    reduced_filtered_data = pca.transform(all_filtered_data)
+    # Perform dimension reduction
+    if reduction_type is 'pca':
+        pca = PCA(n_components=num_comps)
+        pca.fit(all_filtered_data)
+        reduced_filtered_data = pca.transform(all_filtered_data)
+    elif reduction_type is 'tsne':
+        reduced_filtered_data = TSNE(n_components=num_comps, method='exact').fit_transform(all_filtered_data)
 
     # Save the reduced filtered data
     np.savetxt(os.path.join(

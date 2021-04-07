@@ -15,6 +15,7 @@ import torch
 from sklearn.metrics import confusion_matrix
 import networkx as nx
 import matplotlib.pyplot as plt
+from networkx import normalized_laplacian_matrix
 
 
 def generation_classification_loss(generated_graph,
@@ -51,8 +52,11 @@ def generation_classification_loss(generated_graph,
     # Compute the classification loss
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
+    # if classification_labels[0] == 0:
+    #     classification_loss = 4*classification_loss
+
     # Add the classification loss
-    cost = 5*reconstruction_loss - kl_loss + 20*classification_loss
+    cost = classification_loss + reconstruction_loss
 
     return cost, reconstruction_loss, -kl_loss, classification_loss
 
@@ -72,7 +76,7 @@ def train(train_data_dir, train_label_dir, history_path):
     # Make validation and training split in a stratified fashion
     train_idx, val_idx = train_test_split(np.arange(len(dataset)),
                                           test_size=0.2,
-                                          random_state=40,
+                                          random_state=60,
                                           stratify=dataset.label,
                                           shuffle=True)
 
@@ -86,14 +90,17 @@ def train(train_data_dir, train_label_dir, history_path):
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
     # Define classification and generation models
-    generator_model = VariationalGraphAutoEncoder(input_dim=15, hidden_dim_1=6, hidden_dim_2=4, num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=15, hidden_dim=3)
+    generator_model = VariationalGraphAutoEncoder(input_dim=3,
+                                                  hidden_dim_1=3,
+                                                  hidden_dim_2=2,
+                                                  num_nodes=15)
+    classifier_model = BinaryGraphClassifier(input_dim=3, hidden_dim=3)
 
     # Optimizers for the classification and generator process
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=5e-3)
-    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
-    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
+    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-4)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
     # Scheduler
     # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
@@ -107,6 +114,12 @@ def train(train_data_dir, train_label_dir, history_path):
 
     # Colour map for networkx
     color_map = range(15)
+
+    # Create the input graph to the GVAE
+    nx_graph = nx.from_numpy_matrix(np.ones((15, 15)))
+    normalized_graph = normalized_laplacian_matrix(nx_graph).toarray()
+    normalized_graph = torch.tensor(normalized_graph)
+    normalized_graph.requires_grad = False
 
     for epoch in range(10000):
 
@@ -124,9 +137,9 @@ def train(train_data_dir, train_label_dir, history_path):
 
         for features, label in train_dataset:
 
-            generated_graph = generator_model(torch.ones((15, 15)), features[0])
+            generated_graph = generator_model(torch.ones((15, 15)), features[0], False)
 
-            classification_predictions = classifier_model(generated_graph.detach(), features[0])
+            classification_predictions = classifier_model(generated_graph, features[0])
 
             y_true.append(label.numpy().flatten())
             y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -228,9 +241,9 @@ def train(train_data_dir, train_label_dir, history_path):
 
             for features, label in val_dataset:
 
-                generated_graph = generator_model(adj=torch.ones((15, 15)), features=features[0])
+                generated_graph = generator_model(torch.ones((15, 15)), features[0], True)
 
-                classification_predictions = classifier_model(generated_graph.detach(), features[0])
+                classification_predictions = classifier_model(normalized_graph, features[0])
 
                 y_true.append(label.numpy().flatten())
                 y_pred.append(classification_predictions.detach().numpy().flatten())

@@ -40,8 +40,8 @@ class BinaryGraphClassifier(nn.Module):
         self.fc_2 = nn.Linear(hidden_dim, 1)
 
         # Drop out layers
-        self.conv_dropout_1 = nn.Dropout(p=0.5)
-        self.fc_dropout = nn.Dropout(p=0.5)
+        self.conv_dropout_1 = nn.Dropout(p=0)
+        self.fc_dropout = nn.Dropout(p=0)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -108,6 +108,7 @@ class VariationalGraphAutoEncoder(nn.Module):
         self.conv_shared = DenseGraphConv(in_feats=input_dim, out_feats=hidden_dim_1)
         self.conv_mean = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
         self.conv_log_std = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
+        self.conv_non_prob = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -120,7 +121,7 @@ class VariationalGraphAutoEncoder(nn.Module):
 
         self.z = None
 
-    def forward(self, adj, features):
+    def forward(self, adj, features, inference=False):
         """Performs the graph generation's forward path
 
         Performs the encoder and decoder for the graph generation process.
@@ -130,22 +131,31 @@ class VariationalGraphAutoEncoder(nn.Module):
                 Input graph adjacency matrix
             features:
                 The input node features
+            inference:
+                Flag showing if the model is in training or inference mode
 
         Returns:
             The reconstructed graph adjacency matrix
         """
 
-        # Perform the GNN layer that is shared for both the mean and the std layers
-        h = F.relu(self.conv_shared(adj, features))
+        if inference:
 
-        # Perform the GNN layer to obtain embedding means
-        self.h_mean = self.conv_mean(adj, h)
+            # Generate the posterior embeddings
+            self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
 
-        # Perform the GNN layer to obtain embeddings std
-        self.h_log_std = self.conv_log_std(adj, h)
+        else:
 
-        # Generate the posterior embeddings
-        self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
+            # Perform the GNN layer that is shared for both the mean and the std layers
+            h = F.relu(self.conv_shared(adj, features))
+
+            # Perform the GNN layer to obtain embedding means
+            self.h_mean = self.conv_mean(adj, h)
+
+            # Perform the GNN layer to obtain embeddings std
+            self.h_log_std = self.conv_log_std(adj, h)
+
+            # Generate the posterior embeddings
+            self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
 
         # Reconstruct the graph
         reconstruction = matmul(self.z, transpose(self.z, 0, 1))
