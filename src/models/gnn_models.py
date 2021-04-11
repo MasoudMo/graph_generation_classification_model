@@ -1,14 +1,12 @@
 from dgl.nn.pytorch import DenseGraphConv
 from dgl.nn.pytorch import DenseSAGEConv
-import dgl
 import torch.nn.functional as F
 import torch.nn as nn
 from torch import randn_like
 from torch import transpose
 from torch import matmul
 from torch import exp
-from torch import mean
-import torch
+from torch import sum
 
 
 class BinaryGraphClassifier(nn.Module):
@@ -18,7 +16,7 @@ class BinaryGraphClassifier(nn.Module):
 
     """
 
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, hidden_dim_1, hidden_dim_2):
         """Initializes the model
 
         Initializes the GNN layers using the input and hidden dimensions.
@@ -32,16 +30,16 @@ class BinaryGraphClassifier(nn.Module):
         super(BinaryGraphClassifier, self).__init__()
 
         # Define the graph convolutional layers
-        self.conv_1 = DenseGraphConv(in_feats=input_dim, out_feats=hidden_dim)
-        self.conv_2 = DenseGraphConv(in_feats=hidden_dim, out_feats=hidden_dim)
+        self.conv_1 = DenseSAGEConv(in_feats=input_dim, out_feats=hidden_dim_1)
+        self.conv_2 = DenseSAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
 
         # Define the fully connected layers
-        self.fc_1 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc_2 = nn.Linear(hidden_dim, 1)
+        self.fc_1 = nn.Linear(hidden_dim_2, hidden_dim_2)
+        self.fc_2 = nn.Linear(hidden_dim_2, 1)
 
         # Drop out layers
-        self.conv_dropout_1 = nn.Dropout(p=0)
-        self.fc_dropout = nn.Dropout(p=0)
+        self.conv_dropout_1 = nn.Dropout(p=0.8)
+        self.fc_dropout = nn.Dropout(p=0.9)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -69,7 +67,7 @@ class BinaryGraphClassifier(nn.Module):
         h = F.relu(self.conv_2(adj, h))
 
         # Find the sum of node embeddings to use as the graph embedding
-        hg = mean(h, dim=0)
+        hg = sum(h, dim=0)
 
         # Perform the linear layers
         h = F.relu(self.fc_1(hg))
@@ -105,10 +103,10 @@ class VariationalGraphAutoEncoder(nn.Module):
         super(VariationalGraphAutoEncoder, self).__init__()
 
         # Define the graph convolutional layers
-        self.conv_shared = DenseGraphConv(in_feats=input_dim, out_feats=hidden_dim_1)
-        self.conv_mean = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
-        self.conv_log_std = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
-        self.conv_non_prob = DenseGraphConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
+        self.conv_shared = DenseSAGEConv(in_feats=input_dim, out_feats=hidden_dim_1)
+        self.conv_mean = DenseSAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
+        self.conv_log_std = DenseSAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
+        self.conv_non_prob = DenseSAGEConv(in_feats=hidden_dim_1, out_feats=hidden_dim_2)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -138,24 +136,24 @@ class VariationalGraphAutoEncoder(nn.Module):
             The reconstructed graph adjacency matrix
         """
 
-        if inference:
+        # if inference:
+        #
+        #     # Generate the posterior embeddings
+        #     self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
+        #
+        # else:
 
-            # Generate the posterior embeddings
-            self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
+        # Perform the GNN layer that is shared for both the mean and the std layers
+        h = F.relu(self.conv_shared(adj, features))
 
-        else:
+        # Perform the GNN layer to obtain embedding means
+        self.h_mean = self.conv_mean(adj, h)
 
-            # Perform the GNN layer that is shared for both the mean and the std layers
-            h = F.relu(self.conv_shared(adj, features))
+        # Perform the GNN layer to obtain embeddings std
+        self.h_log_std = self.conv_log_std(adj, h)
 
-            # Perform the GNN layer to obtain embedding means
-            self.h_mean = self.conv_mean(adj, h)
-
-            # Perform the GNN layer to obtain embeddings std
-            self.h_log_std = self.conv_log_std(adj, h)
-
-            # Generate the posterior embeddings
-            self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
+        # Generate the posterior embeddings
+        self.z = self.h_mean + randn_like(self.h_mean) * exp(self.h_log_std)
 
         # Reconstruct the graph
         reconstruction = matmul(self.z, transpose(self.z, 0, 1))

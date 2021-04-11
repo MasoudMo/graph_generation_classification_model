@@ -16,7 +16,7 @@ from sklearn.manifold import TSNE
 @click.argument('save_raw_data', type=bool, default=False)
 @click.argument('save_filtered_data', type=bool, default=False)
 @click.argument('ecg_samp_to', type=int, default=20000)
-@click.argument('num_comps', type=int, default=15)
+@click.argument('num_comps', type=int, default=10)
 @click.argument('cutoff_freq', type=int, default=10)
 @click.argument('ctrl_repeats', type=int, default=4)
 @click.argument('reduction_type', type=str, default='tsne')
@@ -73,6 +73,7 @@ def main(dataset_dir,
 
     # Variable holding all filtered data (to be used for PCA)
     all_filtered_data = np.empty((num_processed_records*15, ecg_samp_to))
+    reduced_filtered_data = np.empty((num_processed_records*15, num_comps))
 
     # Extract each record and save it to the CSV file
     curr_idx = 0
@@ -135,11 +136,13 @@ def main(dataset_dir,
                 all_filtered_data[curr_idx*15: (curr_idx+1)*15, :] = filtered_data
                 curr_idx += 1
 
-    # Perform dimension reduction
+    # Perform dimension reduction for each channel
+    test_var = all_filtered_data[0::15]
     if reduction_type is 'pca':
-        pca = PCA(n_components=num_comps)
-        pca.fit(all_filtered_data)
-        reduced_filtered_data = pca.transform(all_filtered_data)
+        for i in range(15):
+            pca = PCA(n_components=num_comps)
+            pca.fit(all_filtered_data[0+i::15])
+            reduced_filtered_data[0+i::15] = pca.transform(all_filtered_data[0+i::15])
     elif reduction_type is 'tsne':
         reduced_filtered_data = TSNE(n_components=num_comps, method='exact').fit_transform(all_filtered_data)
 

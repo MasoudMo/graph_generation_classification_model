@@ -7,6 +7,7 @@ import torch.optim as optim
 from gnn_models import *
 import numpy as np
 from sklearn.metrics import roc_auc_score
+from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data import DataLoader
@@ -56,7 +57,7 @@ def generation_classification_loss(generated_graph,
     #     classification_loss = 4*classification_loss
 
     # Add the classification loss
-    cost = classification_loss + reconstruction_loss
+    cost = classification_loss
 
     return cost, reconstruction_loss, -kl_loss, classification_loss
 
@@ -89,18 +90,26 @@ def train(train_data_dir, train_label_dir, history_path):
     print('Training dataset has {} samples'.format(len(train_dataset)))
     print('Validation dataset has {} samples'.format(len(val_dataset)))
 
+    labels = train_dataset.dataset.label[train_dataset.sampler.indices]
+    print('Training dataset has {} control samples'.format(np.count_nonzero(labels == 0)))
+    print('Training dataset has {} unhealthy samples'.format(np.count_nonzero(labels != 0)))
+
+    labels = val_dataset.dataset.label[val_dataset.sampler.indices]
+    print('Validation dataset has {} control samples'.format(np.count_nonzero(labels == 0)))
+    print('Validation dataset has {} unhealthy samples'.format(np.count_nonzero(labels != 0)))
+
     # Define classification and generation models
-    generator_model = VariationalGraphAutoEncoder(input_dim=3,
-                                                  hidden_dim_1=3,
-                                                  hidden_dim_2=2,
+    generator_model = VariationalGraphAutoEncoder(input_dim=10,
+                                                  hidden_dim_1=7,
+                                                  hidden_dim_2=5,
                                                   num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=3, hidden_dim=3)
+    classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim_1=7, hidden_dim_2=4)
 
     # Optimizers for the classification and generator process
-    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-4)
-    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-4)
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
+    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
     # Scheduler
     # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
@@ -115,11 +124,15 @@ def train(train_data_dir, train_label_dir, history_path):
     # Colour map for networkx
     color_map = range(15)
 
+    # classification threshold
+    threshold = 0.6
+
     # Create the input graph to the GVAE
     nx_graph = nx.from_numpy_matrix(np.ones((15, 15)))
     normalized_graph = normalized_laplacian_matrix(nx_graph).toarray()
     normalized_graph = torch.tensor(normalized_graph)
     normalized_graph.requires_grad = False
+    normalized_graph = normalized_graph.type(torch.FloatTensor)
 
     for epoch in range(10000):
 
@@ -176,11 +189,12 @@ def train(train_data_dir, train_label_dir, history_path):
         num_edges /= len(train_dataset)
         y_true = np.array(y_true).flatten()
         y_pred = np.array(y_pred).flatten()
+        pred_classes = np.where(y_pred.reshape((-1,)) > threshold, 1, 0)
 
         print('Training epoch {}, loss {:.4f}'.format(epoch, epoch_loss))
 
         # Compute the roc_auc accuracy
-        acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
+        acc = f1_score(y_true.reshape((-1,)), pred_classes.reshape(-1,))
         print("Training epoch {}, accuracy {:.4f}".format(epoch, acc))
 
         # Print average number of edges
@@ -209,6 +223,7 @@ def train(train_data_dir, train_label_dir, history_path):
         vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
                  update='append', win='train_num_edge', name='train_trace',
                  opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
+
 
         if history_path:
             f = open(history_path+"_train_losses.txt", "a")
@@ -243,7 +258,7 @@ def train(train_data_dir, train_label_dir, history_path):
 
                 generated_graph = generator_model(torch.ones((15, 15)), features[0], True)
 
-                classification_predictions = classifier_model(normalized_graph, features[0])
+                classification_predictions = classifier_model(generated_graph, features[0])
 
                 y_true.append(label.numpy().flatten())
                 y_pred.append(classification_predictions.detach().numpy().flatten())
@@ -272,15 +287,22 @@ def train(train_data_dir, train_label_dir, history_path):
             num_edges /= len(val_dataset)
             y_true = np.array(y_true).flatten()
             y_pred = np.array(y_pred).flatten()
+            pred_classes = np.where(y_pred.reshape((-1,)) > threshold, 1, 0)
 
             print('Validation epoch {}, loss {:.4f}'.format(epoch, epoch_loss))
 
             # Compute the roc_auc accuracy
-            acc = roc_auc_score(y_true.reshape((-1,)), y_pred.reshape(-1,))
+            acc = f1_score(y_true.reshape((-1,)), pred_classes.reshape(-1,))
             print("Validation epoch {}, accuracy {:.4f}".format(epoch, acc))
 
             # Print average number of edges
             print("Validation epoch {}, num edges {:.4f}".format(epoch, num_edges))
+
+            # Create and plot the confusion matrix
+            conf_mat = confusion_matrix(y_true.reshape((-1,)), pred_classes)
+            vis.heatmap(conf_mat, win='conf_mat', opts=dict(title="Confusion Matrix",
+                                                            columnnames=['pred_0', 'pred_1'],
+                                                            rownames=['true_0', 'true_1']))
 
             # Save the model only if validation accuracy has increased
             if acc > max_validation_acc:
@@ -289,9 +311,7 @@ def train(train_data_dir, train_label_dir, history_path):
                 torch.save(generator_model.state_dict(), '../../models/generator_model.pt')
                 max_validation_acc = acc
 
-                # Create the confusion matrix and store it
-                pred_classes = np.where(y_pred.reshape((-1,))>0.5, 1, 0)
-                conf_mat = confusion_matrix(y_true.reshape((-1,)), pred_classes)
+                # Store the confusion matrix
                 np.savetxt("../../models/confusion_matrix.csv", conf_mat, delimiter=",")
 
             vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
