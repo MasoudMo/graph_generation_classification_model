@@ -57,7 +57,7 @@ def generation_classification_loss(generated_graph,
     #     classification_loss = 4*classification_loss
 
     # Add the classification loss
-    cost = classification_loss
+    cost = 10*classification_loss + reconstruction_loss - kl_loss
 
     return cost, reconstruction_loss, -kl_loss, classification_loss
 
@@ -65,8 +65,8 @@ def generation_classification_loss(generated_graph,
 @click.command()
 @click.argument('train_data_dir', type=click.Path(exists=True))
 @click.argument('train_label_dir', type=click.Path(exists=True))
-# @click.option('--history_path', '-hp', default='../../reports/training_history/tr')
-@click.option('--history_path', '-hp', default=None)
+@click.option('--history_path', '-hp', default='../../reports/training_history/tr')
+# @click.option('--history_path', '-hp', default=None)
 def train(train_data_dir, train_label_dir, history_path):
 
     torch.manual_seed(10)
@@ -100,20 +100,20 @@ def train(train_data_dir, train_label_dir, history_path):
 
     # Define classification and generation models
     generator_model = VariationalGraphAutoEncoder(input_dim=10,
-                                                  hidden_dim_1=7,
-                                                  hidden_dim_2=5,
+                                                  hidden_dim_1=8,
+                                                  hidden_dim_2=6,
                                                   num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim_1=7, hidden_dim_2=4)
+    classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim_1=8, hidden_dim_2=6)
 
     # Optimizers for the classification and generator process
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
-    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
+    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
     # Scheduler
-    # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
-    # scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[50, 100, 300], gamma=0.7)
+    # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 150, 200], gamma=0.5)
+    # scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 150, 200], gamma=0.5)
 
     # Initialize visualizer
     vis = Visdom()
@@ -125,7 +125,7 @@ def train(train_data_dir, train_label_dir, history_path):
     color_map = range(15)
 
     # classification threshold
-    threshold = 0.6
+    threshold = 0.55
 
     # Create the input graph to the GVAE
     nx_graph = nx.from_numpy_matrix(np.ones((15, 15)))
@@ -235,7 +235,7 @@ def train(train_data_dir, train_label_dir, history_path):
             f.close()
 
             # Draw and save the graph every 500 iterations
-            if epoch % 50 == 0:
+            if epoch % 3 == 0:
                 adj = torch.where(generated_graph.detach() > 0.5, 1, 0)
                 nx_graph = nx.from_numpy_matrix(adj.numpy())
                 nx.draw(nx_graph, node_color=color_map, with_labels=True)
@@ -348,7 +348,7 @@ def train(train_data_dir, train_label_dir, history_path):
                 f.close()
 
                 # Draw and save the graph every 500 iterations
-                if epoch % 50 == 0:
+                if epoch % 3 == 0:
                     adj = torch.where(generated_graph.detach() > 0.5, 1, 0)
                     nx_graph = nx.from_numpy_matrix(adj.numpy())
                     nx.draw(nx_graph, node_color=color_map, with_labels=True)

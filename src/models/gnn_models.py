@@ -38,8 +38,9 @@ class BinaryGraphClassifier(nn.Module):
         self.fc_2 = nn.Linear(hidden_dim_2, 1)
 
         # Drop out layers
-        self.conv_dropout_1 = nn.Dropout(p=0.8)
-        self.fc_dropout = nn.Dropout(p=0.9)
+        self.conv_dropout_1 = nn.Dropout(p=0.4)
+        self.conv_dropout_2 = nn.Dropout(p=0.4)
+        self.fc_dropout = nn.Dropout(p=0.4)
 
         # The output activation function
         self.output_func = nn.Sigmoid()
@@ -65,6 +66,7 @@ class BinaryGraphClassifier(nn.Module):
         h = F.relu(self.conv_1(adj, features))
         h = self.conv_dropout_1(h)
         h = F.relu(self.conv_2(adj, h))
+        h = self.conv_dropout_2(h)
 
         # Find the sum of node embeddings to use as the graph embedding
         hg = sum(h, dim=0)
@@ -111,6 +113,9 @@ class VariationalGraphAutoEncoder(nn.Module):
         # The output activation function
         self.output_func = nn.Sigmoid()
 
+        # Drop out layers
+        self.conv_dropout_1 = nn.Dropout(p=0.3)
+
         # Other attributes
         self.num_nodes = num_nodes
         self.hidden_dim_2 = hidden_dim_2
@@ -145,6 +150,7 @@ class VariationalGraphAutoEncoder(nn.Module):
 
         # Perform the GNN layer that is shared for both the mean and the std layers
         h = F.relu(self.conv_shared(adj, features))
+        h = self.conv_dropout_1(h)
 
         # Perform the GNN layer to obtain embedding means
         self.h_mean = self.conv_mean(adj, h)
