@@ -106,10 +106,10 @@ def train(train_data_dir, train_label_dir, history_path):
     classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim_1=8, hidden_dim_2=6)
 
     # Optimizers for the classification and generator process
-    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
+    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
 
     # Scheduler
     # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 150, 200], gamma=0.5)
