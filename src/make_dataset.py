@@ -56,7 +56,7 @@ def main():
     parser.add_argument('--reduction_type',
                         type=str,
                         required=False,
-                        default='pca',
+                        default='tsne',
                         help='Indicates the reduction type (pca or tsne).')
     args = parser.parse_args()
 
