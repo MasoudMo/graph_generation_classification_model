@@ -1,0 +1,11 @@
+torch~=1.8.1
+numpy~=1.20.2
+networkx~=2.5.1
+matplotlib~=3.4.1
+sklearn~=0.0
+scikit-learn~=0.24.2
+visdom~=0.1.8.9
+pandas~=1.2.4
+dgl~=0.6.1
+scipy~=1.6.3
+wfdb~=3.3.0
