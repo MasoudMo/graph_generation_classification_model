@@ -86,6 +86,31 @@ def train():
                         required=False,
                         default=0.2,
                         help='Indicates the validation split percentage.')
+    parser.add_argument('--input_dim',
+                        type=int,
+                        required=False,
+                        default=10,
+                        help='Indicates input data dimension (equal to reduction components).')
+    parser.add_argument('--hidden_dim_1',
+                        type=int,
+                        required=False,
+                        default=8,
+                        help='First GNN hidden layer dimension.')
+    parser.add_argument('--hidden_dim_2',
+                        type=int,
+                        required=False,
+                        default=6,
+                        help='Second GNN hidden layer dimension.')
+    parser.add_argument('--learning_rate',
+                        type=float,
+                        required=False,
+                        default=1e-4,
+                        help='Learning rate.')
+    parser.add_argument('--epochs',
+                        type=int,
+                        required=False,
+                        default=1000,
+                        help='Number of training epochs.')
     args = parser.parse_args()
 
     history_path = args.history_path
@@ -93,6 +118,11 @@ def train():
     train_data_dir = args.train_data_dir
     train_label_dir = args.train_label_dir
     val_split = args.val_split
+    input_dim = args.input_dim
+    hidden_dim_1 = args.hidden_dim_1
+    hidden_dim_2 = args.hidden_dim_2
+    lr = args.learning_rate
+    epochs = args.epochs
 
     # Set random seed
     torch.manual_seed(10)
@@ -126,15 +156,15 @@ def train():
     print('Validation dataset has {} unhealthy samples'.format(np.count_nonzero(labels != 0)))
 
     # Define classification and generation models
-    generator_model = VariationalGraphAutoEncoder(input_dim=10,
-                                                  hidden_dim_1=8,
-                                                  hidden_dim_2=6,
+    generator_model = VariationalGraphAutoEncoder(input_dim=input_dim,
+                                                  hidden_dim_1=hidden_dim_1,
+                                                  hidden_dim_2=hidden_dim_2,
                                                   num_nodes=15)
-    classifier_model = BinaryGraphClassifier(input_dim=10, hidden_dim_1=8, hidden_dim_2=6)
+    classifier_model = BinaryGraphClassifier(input_dim=input_dim, hidden_dim_1=hidden_dim_1, hidden_dim_2=hidden_dim_2)
 
     # Optimizers for the classification and generator process
-    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
+    graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=lr, weight_decay=1e-3)
+    graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=lr, weight_decay=1e-3)
 
     # Initialize visualizer
     if visualize:
@@ -150,13 +180,13 @@ def train():
     threshold = 0.55
 
     # Create the input graph to the GVAE
-    nx_graph = nx.from_numpy_matrix(np.ones((15, 15)))
-    normalized_graph = normalized_laplacian_matrix(nx_graph).toarray()
-    normalized_graph = torch.tensor(normalized_graph)
-    normalized_graph.requires_grad = False
-    normalized_graph = normalized_graph.type(torch.FloatTensor)
+    # nx_graph = nx.from_numpy_matrix(np.ones((15, 15)))
+    # normalized_graph = normalized_laplacian_matrix(nx_graph).toarray()
+    # normalized_graph = torch.tensor(normalized_graph)
+    # normalized_graph.requires_grad = False
+    # normalized_graph = normalized_graph.type(torch.FloatTensor)
 
-    for epoch in range(10000):
+    for epoch in range(epochs):
 
         # Put models in training mode
         generator_model.train()
