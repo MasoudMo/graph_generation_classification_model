@@ -1,12 +1,9 @@
 from dataset import PtbEcgDataset
-import click
 from torch.nn.functional import binary_cross_entropy
 from torch import square
-from torch import sum
 import torch.optim as optim
 from gnn_models import *
 import numpy as np
-from sklearn.metrics import roc_auc_score
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -17,6 +14,7 @@ from sklearn.metrics import confusion_matrix
 import networkx as nx
 import matplotlib.pyplot as plt
 from networkx import normalized_laplacian_matrix
+import argparse
 
 
 def generation_classification_loss(generated_graph,
@@ -53,22 +51,50 @@ def generation_classification_loss(generated_graph,
     # Compute the classification loss
     classification_loss = binary_cross_entropy(classification_predictions, classification_labels)
 
-    # if classification_labels[0] == 0:
-    #     classification_loss = 4*classification_loss
-
     # Add the classification loss
     cost = 10*classification_loss + reconstruction_loss - kl_loss
 
     return cost, reconstruction_loss, -kl_loss, classification_loss
 
 
-@click.command()
-@click.argument('train_data_dir', type=click.Path(exists=True))
-@click.argument('train_label_dir', type=click.Path(exists=True))
-@click.option('--history_path', '-hp', default='../../reports/training_history/tr')
-# @click.option('--history_path', '-hp', default=None)
-def train(train_data_dir, train_label_dir, history_path):
+def train():
 
+    # Command line argument parser
+    parser = argparse.ArgumentParser(description='Graph generation and classification of ECG data')
+    parser.add_argument('--history_path',
+                        type=str,
+                        required=False,
+                        default=None,
+                        help='Path to save training history to.')
+    parser.add_argument('--visualize',
+                        type=bool,
+                        required=False,
+                        default=None,
+                        help='Indicates whether Visdom plots are created or not.')
+    parser.add_argument('--train_data_dir',
+                        type=str,
+                        required=False,
+                        default='../data/',
+                        help='Path to dataset. The file name is to be included.')
+    parser.add_argument('--train_label_dir',
+                        type=str,
+                        required=False,
+                        default='../data/',
+                        help='Path to dataset labels. The file name is to be included.')
+    parser.add_argument('--val_split',
+                        type=float,
+                        required=False,
+                        default=0.2,
+                        help='Indicates the validation split percentage.')
+    args = parser.parse_args()
+
+    history_path = args.history_path
+    visualize = args.visualize
+    train_data_dir = args.train_data_dir
+    train_label_dir = args.train_label_dir
+    val_split = args.val_split
+
+    # Set random seed
     torch.manual_seed(10)
 
     # Load the dataset
@@ -76,7 +102,7 @@ def train(train_data_dir, train_label_dir, history_path):
 
     # Make validation and training split in a stratified fashion
     train_idx, val_idx = train_test_split(np.arange(len(dataset)),
-                                          test_size=0.2,
+                                          test_size=val_split,
                                           random_state=60,
                                           stratify=dataset.label,
                                           shuffle=True)
@@ -84,6 +110,7 @@ def train(train_data_dir, train_label_dir, history_path):
     train_dataset = DataLoader(dataset, sampler=SubsetRandomSampler(train_idx))
     val_dataset = DataLoader(dataset, sampler=SubsetRandomSampler(val_idx))
 
+    # Print some statistics
     print('Dataset has {} control samples'.format(dataset.num_healthy_samps))
     print('Dataset has {} unhealthy samples'.format(dataset.num_unhealthy_samps))
 
@@ -108,15 +135,10 @@ def train(train_data_dir, train_label_dir, history_path):
     # Optimizers for the classification and generator process
     graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4, weight_decay=1e-3)
     graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4, weight_decay=1e-3)
-    # graph_generator_optimizer = optim.Adam(generator_model.parameters(), lr=1e-4)
-    # graph_classifier_optimizer = optim.Adam(classifier_model.parameters(), lr=1e-4)
-
-    # Scheduler
-    # scheduler_gen = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 150, 200], gamma=0.5)
-    # scheduler_cl = torch.optim.lr_scheduler.MultiStepLR(graph_classifier_optimizer, milestones=[100, 150, 200], gamma=0.5)
 
     # Initialize visualizer
-    vis = Visdom()
+    if visualize:
+        vis = Visdom()
 
     # Holds the maximum validation accuracy
     max_validation_acc = 0
@@ -200,30 +222,30 @@ def train(train_data_dir, train_label_dir, history_path):
         # Print average number of edges
         print("Training epoch {}, num edges {:.4f}".format(epoch, num_edges))
 
-        vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_loss', name='train_trace',
-                 opts=dict(title="Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+        if visualize:
+            vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_loss', name='train_trace',
+                     opts=dict(title="Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-        vis.line(Y=torch.reshape(torch.tensor(acc), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_acc', name='train_trace',
-                 opts=dict(title="Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+            vis.line(Y=torch.reshape(torch.tensor(acc), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_acc', name='train_trace',
+                     opts=dict(title="Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
 
-        vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_recl', name='train_trace',
-                 opts=dict(title="Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+            vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_recl', name='train_trace',
+                     opts=dict(title="Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-        vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_kl', name='train_trace',
-                 opts=dict(title="KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+            vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_kl', name='train_trace',
+                     opts=dict(title="KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-        vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_cl', name='train_trace',
-                 opts=dict(title="Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+            vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_cl', name='train_trace',
+                     opts=dict(title="Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-        vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                 update='append', win='train_num_edge', name='train_trace',
-                 opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
-
+            vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                     update='append', win='train_num_edge', name='train_trace',
+                     opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
 
         if history_path:
             f = open(history_path+"_train_losses.txt", "a")
@@ -300,9 +322,11 @@ def train(train_data_dir, train_label_dir, history_path):
 
             # Create and plot the confusion matrix
             conf_mat = confusion_matrix(y_true.reshape((-1,)), pred_classes)
-            vis.heatmap(conf_mat, win='conf_mat', opts=dict(title="Confusion Matrix",
-                                                            columnnames=['pred_0', 'pred_1'],
-                                                            rownames=['true_0', 'true_1']))
+
+            if visualize:
+                vis.heatmap(conf_mat, win='conf_mat', opts=dict(title="Confusion Matrix",
+                                                                columnnames=['pred_0', 'pred_1'],
+                                                                rownames=['true_0', 'true_1']))
 
             # Save the model only if validation accuracy has increased
             if acc > max_validation_acc:
@@ -314,29 +338,30 @@ def train(train_data_dir, train_label_dir, history_path):
                 # Store the confusion matrix
                 np.savetxt("../../models/confusion_matrix.csv", conf_mat, delimiter=",")
 
-            vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
-                     update='append', win='train_loss', name='val_trace',
-                     opts=dict(title="Validation Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+            if visualize:
+                vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
+                         update='append', win='train_loss', name='val_trace',
+                         opts=dict(title="Validation Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-            vis.line(Y=torch.reshape(torch.tensor(acc), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
-                     update='append', win='train_acc', name='val_trace',
-                     opts=dict(title="Validation Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
+                vis.line(Y=torch.reshape(torch.tensor(acc), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
+                         update='append', win='train_acc', name='val_trace',
+                         opts=dict(title="Validation Accuracy Per Epoch", xlabel="Epoch", ylabel="Accuracy"))
 
-            vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                     update='append', win='train_recl', name='val_trace',
-                     opts=dict(title="Validation Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+                vis.line(Y=torch.reshape(torch.tensor(epoch_recl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                         update='append', win='train_recl', name='val_trace',
+                         opts=dict(title="Validation Reconstruction Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-            vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                     update='append', win='train_kl', name='val_trace',
-                     opts=dict(title="Validation KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+                vis.line(Y=torch.reshape(torch.tensor(epoch_kl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                         update='append', win='train_kl', name='val_trace',
+                         opts=dict(title="Validation KL Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-            vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                     update='append', win='train_cl', name='val_trace',
-                     opts=dict(title="Validation Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
+                vis.line(Y=torch.reshape(torch.tensor(epoch_cl), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                         update='append', win='train_cl', name='val_trace',
+                         opts=dict(title="Validation Classification Losses Per Epoch", xlabel="Epoch", ylabel="Loss"))
 
-            vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
-                     update='append', win='train_num_edge', name='val_trace',
-                     opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
+                vis.line(Y=torch.reshape(torch.tensor(num_edges), (-1, )), X=torch.reshape(torch.tensor(epoch), (-1, )),
+                         update='append', win='train_num_edge', name='val_trace',
+                         opts=dict(title="Average number of graph edges", xlabel="Epoch", ylabel="Number of Edges"))
 
             if history_path:
                 f = open(history_path+"_val_losses.txt", "a")
@@ -355,10 +380,7 @@ def train(train_data_dir, train_label_dir, history_path):
                     plt.savefig(history_path+"_val_graph_"+str(epoch)+".png", format="PNG")
                     plt.close()
 
-        # Change LR
-        # scheduler_gen.step()
-        # scheduler_cl.step()
-
 
 if __name__ == "__main__":
     train()
+
