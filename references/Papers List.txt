@@ -1,5 +1,0 @@
-Variational Graph Auto-Encoders
-https://arxiv.org/pdf/1611.07308.pdf
-
-GraphRNN:
-https://arxiv.org/pdf/1802.08773.pdf
