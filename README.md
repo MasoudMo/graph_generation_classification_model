@@ -9,7 +9,7 @@ The Graph Generation Classification Network combines the graph generation and cl
 
 The overall framework of this network is shown in figure below:
 
-![GGCN](https://github.com/MasoudMo/knn_gnn/blob/master/docs/knn_gnn.PNG?raw=true)
+![GGCN](https://github.com/MasoudMo/graph_generation_classification_network/blob/master/docs/GGCN.PNG?raw=true)
 
 ## Usage
 
