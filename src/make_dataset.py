@@ -1,35 +1,74 @@
 # -*- coding: utf-8 -*-
-import click
 import logging
-from dotenv import find_dotenv, load_dotenv
 import os
 import wfdb
 import numpy as np
 from scipy import signal
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+import argparse
 
 
-@click.command()
-@click.argument('dataset_dir', type=click.Path(exists=True))
-@click.argument('output_dir', type=click.Path())
-@click.argument('save_raw_data', type=bool, default=False)
-@click.argument('save_filtered_data', type=bool, default=False)
-@click.argument('ecg_samp_to', type=int, default=20000)
-@click.argument('num_comps', type=int, default=10)
-@click.argument('cutoff_freq', type=int, default=10)
-@click.argument('ctrl_repeats', type=int, default=4)
-@click.argument('reduction_type', type=str, default='tsne')
+def main():
 
-def main(dataset_dir,
-         output_dir,
-         save_raw_data,
-         save_filtered_data,
-         ecg_samp_to,
-         num_comps,
-         cutoff_freq,
-         ctrl_repeats,
-         reduction_type):
+    # Command line argument parser
+    parser = argparse.ArgumentParser(description='Data preprocessing for GGCN')
+    parser.add_argument('--dataset_dir',
+                        type=str,
+                        required=False,
+                        default="../data/",
+                        help='Path to the raw dataset.')
+    parser.add_argument('--output_dir',
+                        type=str,
+                        required=False,
+                        default="../data/processed_data/",
+                        help='Path to save the processed data to.')
+    parser.add_argument('--save_raw_data',
+                        type=bool,
+                        required=False,
+                        default=None,
+                        help='Indicates whether raw data is saved or not.')
+    parser.add_argument('--save_filtered_data',
+                        type=bool,
+                        required=False,
+                        default=None,
+                        help='Indicates whether filtered data is saved or not.')
+    parser.add_argument('--ecg_samp_to',
+                        type=int,
+                        required=False,
+                        default=20000,
+                        help='Indicates the last sample index used from the ECG signal.')
+    parser.add_argument('--num_comps',
+                        type=int,
+                        required=False,
+                        default=10,
+                        help='Indicates the number of reduction components to use.')
+    parser.add_argument('--cutoff_freq',
+                        type=int,
+                        required=False,
+                        default=10,
+                        help='Indicates the cutoff frequency of the high pass filter.')
+    parser.add_argument('--ctrl_repeats',
+                        type=int,
+                        required=False,
+                        default=4,
+                        help='Indicates the number of times healthy samples are repeated for augmentation.')
+    parser.add_argument('--reduction_type',
+                        type=str,
+                        required=False,
+                        default='pca',
+                        help='Indicates the reduction type (pca or tsne).')
+    args = parser.parse_args()
+
+    dataset_dir = args.dataset_dir
+    output_dir = args.output_dir
+    save_raw_data = args.save_raw_data
+    save_filtered_data = args.save_filtered_data
+    ecg_samp_to = args.ecg_samp_to
+    num_comps = args.num_comps
+    cutoff_freq = args.cutoff_freq
+    ctrl_repeats = args.ctrl_repeats
+    reduction_type = args.reduction_type
 
     logger = logging.getLogger(__name__)
     logger.info('Processing raw data...')
@@ -41,6 +80,7 @@ def main(dataset_dir,
     # The dataset comes with a records file including path to each patient's data
     record_files = open(os.path.join(dataset_dir, 'RECORDS'))
     record_files = [os.path.join(dataset_dir, file) for file in record_files.read().split('\n')][:-1]
+    record_files = record_files[:-1]
     record_files = [i for j, i in enumerate(record_files) if j not in records_to_exclude]
 
     # Diagnosis dictionary
@@ -163,9 +203,5 @@ def main(dataset_dir,
 if __name__ == '__main__':
     log_fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     logging.basicConfig(level=logging.INFO, format=log_fmt)
-
-    # find .env automagically by walking up directories until it's found, then
-    # load up the .env entries as environment variables
-    load_dotenv(find_dotenv())
 
     main()

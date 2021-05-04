@@ -1,3 +1,4 @@
+
 from dataset import PtbEcgDataset
 from torch.nn.functional import binary_cross_entropy
 from torch import square
@@ -15,6 +16,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from networkx import normalized_laplacian_matrix
 import argparse
+import os
 
 
 def generation_classification_loss(generated_graph,
@@ -74,13 +76,18 @@ def train():
     parser.add_argument('--train_data_dir',
                         type=str,
                         required=False,
-                        default='../data/',
+                        default='../data/processed_data/reduced_filtered_data.csv',
                         help='Path to dataset. The file name is to be included.')
     parser.add_argument('--train_label_dir',
                         type=str,
                         required=False,
-                        default='../data/',
+                        default='../data/processed_data/labels.csv',
                         help='Path to dataset labels. The file name is to be included.')
+    parser.add_argument('--model_dir',
+                        type=str,
+                        required=False,
+                        default='../models/',
+                        help='Path to save the trained models to.')
     parser.add_argument('--val_split',
                         type=float,
                         required=False,
@@ -123,6 +130,7 @@ def train():
     hidden_dim_2 = args.hidden_dim_2
     lr = args.learning_rate
     epochs = args.epochs
+    model_dir = args.model_dir
 
     # Set random seed
     torch.manual_seed(10)
@@ -361,12 +369,13 @@ def train():
             # Save the model only if validation accuracy has increased
             if acc > max_validation_acc:
                 print("Accuracy increased. Saving model...")
-                torch.save(classifier_model.state_dict(), '../../models/classifier_model.pt')
-                torch.save(generator_model.state_dict(), '../../models/generator_model.pt')
+                torch.save(classifier_model.state_dict(), os.path.join(model_dir, 'classifier_model.pt'))
+                torch.save(generator_model.state_dict(), os.path.join(model_dir, 'generator_model.pt'))
                 max_validation_acc = acc
 
                 # Store the confusion matrix
-                np.savetxt("../../models/confusion_matrix.csv", conf_mat, delimiter=",")
+                if history_path:
+                    np.savetxt(os.path.join(history_path, 'conf_mat.csv'), conf_mat, delimiter=",")
 
             if visualize:
                 vis.line(Y=torch.reshape(torch.tensor(epoch_loss), (-1,)), X=torch.reshape(torch.tensor(epoch), (-1,)),
