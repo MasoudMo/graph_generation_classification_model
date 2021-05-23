@@ -11,6 +11,21 @@ The overall framework of this network is shown in figure below:
 
 ![GGCN](https://github.com/MasoudMo/graph_generation_classification_network/blob/master/docs/GGCN.PNG?raw=true)
 
+## Requirements
+<ul>
+<li>torch~=1.8.1</li>
+<li>numpy~=1.20.2</li>
+<li>networkx~=2.5.1</li>
+<li>matplotlib~=3.4.1</li>
+<li>sklearn~=0.0</li>
+<li>scikit-learn~=0.24.2</li>
+<li>visdom~=0.1.8.9</li>
+<li>pandas~=1.2.4</li>
+<li>dgl~=0.6.1</li>
+<li>scipy~=1.6.3</li>
+<li>wfdb~=3.3.0</li>
+</ul>
+
 ## Usage
 
 The dataset can directly be downloaded as a zip file from the following link: 
